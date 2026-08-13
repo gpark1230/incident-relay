@@ -96,8 +96,16 @@ Result: **175 requests, 160 hits, 15 misses — 91.4% cache hit rate**, with the
 
 Found while trying to run the load test against the live Railway deployment instead of locally: `GET /incidents/{id}` returned a bare `500` there, because IncidentDesk requires a Bearer token IncidentRelay's proxy never sends, IncidentDesk correctly returns `401`, and `get_incident()`'s `upstream.raise_for_status()` turned that into an unhandled exception instead of a passed-through `401`. Fixed by replacing the `404`-only special case + `raise_for_status()` with a general `status_code >= 400` check that re-raises IncidentRelay's own `HTTPException` at IncidentDesk's real status code, carrying IncidentDesk's real response body as `detail` — and, importantly, only caching on success, so an error response never gets cached as if it were real incident data. Verified against the real live IncidentDesk (not just a mock): `GET /incidents/1` through the local proxy now correctly returns `401 {"detail":{"detail":"Not authenticated"}}` instead of a bare `500`.
 
-Real credentials for IncidentRelay to call IncidentDesk's API (service token? shared secret?) are still not wired up — that's a separate, bigger scope decision than "return the right status code" — so the live deployment's cache proxy still can't successfully read real incident data. It now fails honestly (`401`) instead of lying about why (`500`).
+Real credentials for IncidentRelay to call IncidentDesk's API (service token? shared secret?) weren't wired up yet at that point — that's a separate, bigger scope decision than "return the right status code." Resolved below.
+
+## IncidentDesk auth: a dedicated service account, not shared personal credentials
+
+IncidentDesk only has one auth mechanism — email/password login at `POST /auth/login` returning a JWT (`app/auth.py`, `OAuth2PasswordBearer` + `python-jose`), no separate machine-to-machine flow. Rather than give IncidentRelay Gavin's own login, or hand-create a row directly in IncidentDesk's database, a dedicated service account was created through IncidentDesk's own public `POST /auth/signup` endpoint — the same path any real user goes through, so it's an ordinary account with ordinary constraints, not a special-cased backdoor. `GET /incidents/{incident_id}` only requires `get_current_user` (any authenticated user, no `require_role` check), so the default signup role, `viewer`, is already sufficient — no elevated permissions needed or requested.
+
+`app/incident_desk_auth.py` logs in once and caches the resulting JWT in Redis for 55 minutes — a little under IncidentDesk's own 60-minute expiry (`ACCESS_TOKEN_EXPIRE_MINUTES` in `app/auth.py`), so IncidentRelay always refreshes *before* IncidentDesk itself would reject the token, rather than finding out via a failed request. `GET /incidents/{id}` retries exactly once on a `401` (invalidating the cached token first) to absorb clock-skew or early-revocation edge cases, then gives up and passes the real `401` through rather than retrying forever.
+
+Verified against the real live IncidentDesk, not a mock: `GET /incidents/1` through the local proxy now returns real incident data (`"Ransomware alert from CrowdStrike on FIN-WKS-014"`) on a cache MISS, and serves it from cache with zero upstream calls on the next request — the full read-through cache, working end-to-end against production IncidentDesk for the first time.
 
 ## Not yet decided / not yet built
 
-- Give IncidentRelay real credentials to call IncidentDesk's API (currently every live-deployment cache proxy request 401s upstream — now surfaced correctly as a 401, no longer masked as a 500).
+(nothing currently)

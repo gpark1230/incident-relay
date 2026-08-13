@@ -4,7 +4,7 @@ from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app import cache
+from app import cache, incident_desk_auth
 from app.config import settings
 from app.db import get_db, get_redis
 from app.models import NotificationAttempt, NotificationStatus
@@ -49,6 +49,25 @@ def list_notifications(
     return db.execute(stmt).scalars().all()
 
 
+def _fetch_incident_from_upstream(
+    incident_id: int, redis_client: Redis, retry_on_auth_failure: bool = True
+) -> httpx.Response:
+    token = incident_desk_auth.get_token(redis_client)
+    upstream = httpx.get(
+        f"{settings.incident_desk_api_url}/incidents/{incident_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=5.0,
+    )
+    if upstream.status_code == 401 and retry_on_auth_failure:
+        # Cached token may have expired early (clock skew) or been
+        # revoked -- get a fresh one and try exactly once more.
+        incident_desk_auth.invalidate_token(redis_client)
+        return _fetch_incident_from_upstream(
+            incident_id, redis_client, retry_on_auth_failure=False
+        )
+    return upstream
+
+
 @app.get("/incidents/{incident_id}")
 def get_incident(
     incident_id: int, response: Response, redis_client: Redis = Depends(get_redis)
@@ -64,8 +83,14 @@ def get_incident(
         return cached
 
     try:
-        upstream = httpx.get(
-            f"{settings.incident_desk_api_url}/incidents/{incident_id}", timeout=5.0
+        upstream = _fetch_incident_from_upstream(incident_id, redis_client)
+    except httpx.HTTPStatusError as exc:
+        # Raised by the login call's raise_for_status() -- e.g. the
+        # service account's credentials were rejected. This is a real
+        # IncidentDesk-side auth problem, not this specific incident's
+        # fault, so it isn't a 401 on THIS request -- surface it as 502.
+        raise HTTPException(
+            status_code=502, detail=f"IncidentDesk authentication failed: {exc}"
         )
     except httpx.RequestError as exc:
         raise HTTPException(status_code=502, detail=f"IncidentDesk unreachable: {exc}")
