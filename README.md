@@ -4,6 +4,8 @@ An async notification, rate-limiting, and caching service for [IncidentDesk](htt
 
 Rather than bolting a slow, synchronous notification call directly into IncidentDesk's request/response cycle, IncidentRelay is a separate, independently deployable service. IncidentDesk publishes a small JSON event to a shared Redis list whenever something happens; IncidentRelay picks it up, sends a Slack notification, tracks whether it succeeded, and retries with backoff if it didn't.
 
+![A real incident.created event delivered by IncidentRelay to a live Slack channel](./docs/slack-notification.png)
+
 ## Why this exists
 
 "Design a rate limiter" and "how do you handle cache invalidation" are two of the most common system-design interview questions. This project is both of those, actually built, plus background job processing — three "beyond CRUD" pieces in one cohesive service instead of three disconnected toy demos.
@@ -50,9 +52,9 @@ IncidentRelay never imports IncidentDesk's code and never touches IncidentDesk's
 
 ## Status
 
-**Built so far:** event ingestion (listener), RQ-based job processing with retry/backoff, Postgres-backed notification history, token-bucket rate limiting, cached read-through incident proxy with invalidation, health check, Docker Compose stack, Alembic migrations, CI, and a full test suite — all verified end-to-end locally against real containers, not just unit tests: a fake event pushed through the real pipeline, a burst of events proven to trip the rate limiter, and a cache MISS→HIT→invalidation→MISS cycle proven against a stub IncidentDesk server.
+**Built so far:** event ingestion (listener), RQ-based job processing with retry/backoff, Postgres-backed notification history, token-bucket rate limiting, cached read-through incident proxy with invalidation, health check, Docker Compose stack, Alembic migrations, CI, and a full test suite — all verified end-to-end locally against real containers, not just unit tests: a fake event pushed through the real pipeline, a burst of events proven to trip the rate limiter, a cache MISS→HIT→invalidation→MISS cycle proven against a stub IncidentDesk server, and a real Slack incoming webhook confirmed delivering an actual message to a live channel (`HTTP 200` from Slack, `notification_attempts.status = sent`).
 
-**Not yet built:** a real (non-placeholder) Slack webhook verification, and deployment to Railway.
+**Not yet built:** deployment to Railway.
 
 **Known limitation:** there's no Slack-user directory, so notifications currently address recipients as `user:{id}` in the message text rather than routing to a real per-user Slack DM (that would need Slack app OAuth scopes beyond a simple incoming webhook, which is out of scope for this project).
 

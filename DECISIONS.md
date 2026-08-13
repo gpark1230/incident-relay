@@ -66,7 +66,10 @@ Added `NotificationStatus.rate_limited` (migration `a1c2d3e4f5g6`) rather than r
 
 Unit tests mock `httpx.get`, which proves the code path but not that a real HTTP round trip to another service actually caches and invalidates correctly. To verify for real (same standard applied to the queue/worker/rate-limiter milestones), a tiny stand-in HTTP server was run on the host (`http.server`, one route, an incrementing hit counter in the response body) with `INCIDENT_DESK_API_URL` pointed at it via Docker's `host.docker.internal`. Confirmed: first `GET /incidents/5` was a MISS hitting the stub (`upstream_hit_count` incremented, `X-Cache: MISS`), the second was a HIT with no upstream call (`X-Cache: HIT`, same `upstream_hit_count`), and after pushing a real `incident.updated` event through Redis, the next `GET` was a MISS again with `upstream_hit_count` incremented — proving the listener's invalidation actually took effect, not just that the code compiles.
 
+## Real Slack incoming webhook confirmed end-to-end
+
+Swapped the placeholder `NOTIFY_WEBHOOK_URL` for a real incoming webhook (created via api.slack.com/apps → Incoming Webhooks → added to a live channel), pushed a real `incident.created` event through the full pipeline, and confirmed: `httpx` got `HTTP 200 OK` from `hooks.slack.com`, the `notification_attempts` row landed as `status = sent`, and the message was visually confirmed in the live Slack channel. No code changes were needed — `app/notifier.py` was written against Slack's real webhook contract from the start, so this was purely a config swap.
+
 ## Not yet decided / not yet built
 
-- A real (non-placeholder) Slack incoming webhook URL, to confirm a message actually lands in a channel.
 - Railway deployment.
