@@ -1,9 +1,11 @@
 import json
 import logging
+import time
 
 from redis import Redis
 from rq import Queue, Retry
 
+from app import rate_limiter
 from app.config import settings
 from app.db import SessionLocal
 from app.events import INCIDENT_EVENTS_KEY, IncidentEvent
@@ -17,12 +19,13 @@ NOTIFIABLE_EVENTS = {"incident.created", "incident.updated", "incident.commented
 RETRY_INTERVALS_SECONDS = [10, 30, 90]
 
 
-def handle_event(event: IncidentEvent, queue: Queue) -> None:
+def handle_event(event: IncidentEvent, queue: Queue, redis_client: Redis) -> None:
     if event.get("event") not in NOTIFIABLE_EVENTS:
         logger.info("Skipping unrecognized event type: %s", event.get("event"))
         return
 
     recipient = f"user:{event['user_id']}"
+    allowed = rate_limiter.allow(redis_client, recipient, time.time())
 
     db = SessionLocal()
     try:
@@ -30,13 +33,22 @@ def handle_event(event: IncidentEvent, queue: Queue) -> None:
             event=event["event"],
             incident_id=event["incident_id"],
             recipient=recipient,
-            status=NotificationStatus.pending,
+            status=NotificationStatus.pending if allowed else NotificationStatus.rate_limited,
         )
         db.add(attempt)
         db.commit()
         db.refresh(attempt)
     finally:
         db.close()
+
+    if not allowed:
+        logger.info(
+            "Rate limited: incident %s -> %s (attempt %s recorded, not sent)",
+            event["incident_id"],
+            recipient,
+            attempt.id,
+        )
+        return
 
     queue.enqueue(
         process_notification,
@@ -68,7 +80,7 @@ def run() -> None:
             continue
 
         try:
-            handle_event(event, queue)
+            handle_event(event, queue, redis_conn)
         except Exception:
             logger.exception("Failed to handle event: %r", event)
 

@@ -11,6 +11,7 @@ class NotificationStatus(str, enum.Enum):
     pending = "pending"
     sent = "sent"
     failed = "failed"
+    rate_limited = "rate_limited"
 
 
 class NotificationAttempt(Base):

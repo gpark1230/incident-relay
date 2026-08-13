@@ -1,6 +1,6 @@
 # IncidentRelay
 
-An async notification service for [IncidentDesk](https://github.com/gpark1230/incident-desk) — the piece IncidentDesk is missing: nobody currently gets notified when an incident is created, updated, or commented on.
+An async notification and rate-limiting service for [IncidentDesk](https://github.com/gpark1230/incident-desk) — the piece IncidentDesk is missing: nobody currently gets notified when an incident is created, updated, or commented on.
 
 Rather than bolting a slow, synchronous notification call directly into IncidentDesk's request/response cycle, IncidentRelay is a separate, independently deployable service. IncidentDesk publishes a small JSON event to a shared Redis list whenever something happens; IncidentRelay picks it up, sends a Slack notification, tracks whether it succeeded, and retries with backoff if it didn't.
 
@@ -33,11 +33,13 @@ IncidentRelay never imports IncidentDesk's code and never touches IncidentDesk's
 {"event": "incident.created", "incident_id": 5, "user_id": 3, "details": "severity: critical", "timestamp": "2026-08-12T20:00:16Z"}
 ```
 
+**Rate limiting:** before a notification is sent, the listener checks a Redis-backed token bucket per recipient (`RATE_LIMIT_MAX_TOKENS` per `RATE_LIMIT_WINDOW_SECONDS`, both configurable). The bucket is a single atomic Redis Lua script (`app/rate_limiter.py`) — read-compute-write in one round trip, so concurrent listener instances can't race each other into over-allowing. Over-limit events still get a `NotificationAttempt` row (`status=rate_limited`) so it's visible in `/notifications`, but no Slack send is attempted.
+
 ## Tech stack
 
 - **FastAPI** — health check + notification history read endpoint (this is a real deployable service, not a bare worker script)
 - **RQ (Redis Queue)** — background job processing with built-in retry/backoff, chosen over Celery for much less setup at this project's scale
-- **Redis** — the event bridge (`BLPOP`/`RPUSH`) and the RQ job queue; a rate-limit token bucket and read-through cache are coming in later milestones
+- **Redis** — the event bridge (`BLPOP`/`RPUSH`), the RQ job queue, and the rate-limit token bucket; a read-through cache is coming in a later milestone
 - **PostgreSQL + SQLAlchemy + Alembic** — its own database, tracking notification attempts
 - **Slack incoming webhook** — the actual notification
 - **pytest**, with the webhook call mocked and Postgres/Redis swapped for SQLite/fakeredis, so the whole suite runs without any live services
@@ -46,9 +48,9 @@ IncidentRelay never imports IncidentDesk's code and never touches IncidentDesk's
 
 ## Status
 
-**Built so far:** event ingestion (listener), RQ-based job processing with retry/backoff, Postgres-backed notification history, health check, Docker Compose stack, Alembic migration, CI, and a full test suite — all verified end-to-end locally by pushing a fake event through the real pipeline.
+**Built so far:** event ingestion (listener), RQ-based job processing with retry/backoff, Postgres-backed notification history, token-bucket rate limiting, health check, Docker Compose stack, Alembic migrations, CI, and a full test suite — all verified end-to-end locally against real containers: a fake event pushed through the real pipeline, and a burst of events proven to trip the rate limiter.
 
-**Not yet built:** rate limiting (token bucket), the cached read-through `GET /incidents/{id}` proxy with invalidation, a real (non-placeholder) Slack webhook verification, and deployment to Railway.
+**Not yet built:** the cached read-through `GET /incidents/{id}` proxy with invalidation, a real (non-placeholder) Slack webhook verification, and deployment to Railway.
 
 **Known limitation:** there's no Slack-user directory, so notifications currently address recipients as `user:{id}` in the message text rather than routing to a real per-user Slack DM (that would need Slack app OAuth scopes beyond a simple incoming webhook, which is out of scope for this project).
 

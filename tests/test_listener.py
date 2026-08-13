@@ -32,7 +32,7 @@ def test_handle_event_records_attempt_and_enqueues_job(mocker, fake_redis):
         "timestamp": "2026-08-13T18:00:00+00:00",
     }
 
-    handle_event(event, queue)
+    handle_event(event, queue, fake_redis)
 
     session = session_factory()
     attempts = session.execute(select(NotificationAttempt)).scalars().all()
@@ -48,7 +48,9 @@ def test_handle_event_skips_unrecognized_event_type(mocker, fake_redis):
     mocker.patch("app.listener.SessionLocal", session_factory)
     queue = Queue("notifications", connection=fake_redis)
 
-    handle_event({"event": "incident.deleted", "incident_id": 1, "user_id": 1}, queue)
+    handle_event(
+        {"event": "incident.deleted", "incident_id": 1, "user_id": 1}, queue, fake_redis
+    )
 
     session = session_factory()
     attempts = session.execute(select(NotificationAttempt)).scalars().all()
