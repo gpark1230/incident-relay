@@ -70,9 +70,15 @@ def get_incident(
     except httpx.RequestError as exc:
         raise HTTPException(status_code=502, detail=f"IncidentDesk unreachable: {exc}")
 
-    if upstream.status_code == 404:
-        raise HTTPException(status_code=404, detail="Incident not found")
-    upstream.raise_for_status()
+    if upstream.status_code >= 400:
+        # Pass the real upstream status through (401 stays 401, 404 stays
+        # 404, ...) instead of raise_for_status() turning every error into
+        # an opaque 500 -- callers need to know *why* the lookup failed.
+        try:
+            detail = upstream.json()
+        except ValueError:
+            detail = upstream.text
+        raise HTTPException(status_code=upstream.status_code, detail=detail)
 
     data = upstream.json()
     cache.set_cached_incident(redis_client, incident_id, data)

@@ -92,10 +92,12 @@ Needed an honest number for how much the read-through cache actually cuts repeat
 
 Result: **175 requests, 160 hits, 15 misses — 91.4% cache hit rate**, with the upstream cross-check matching exactly (15 misses reported = 15 requests the upstream actually received). Run locally against the same stub-IncidentDesk setup used to verify invalidation, since the live Railway deployment can't be used for this yet — see the bug below.
 
-## Bug: the cache proxy 500s instead of passing through IncidentDesk's real status code
+## Fixed: the cache proxy 500'd instead of passing through IncidentDesk's real status code
 
-Found while trying to run the load test against the live Railway deployment instead of locally: `GET /incidents/{id}` returns a bare `500` there, because IncidentDesk requires a Bearer token IncidentRelay's proxy never sends, IncidentDesk correctly returns `401`, and `get_incident()`'s `upstream.raise_for_status()` turns that into an unhandled exception instead of a passed-through `401`. Not fixed yet — fixing it for real means deciding how IncidentRelay authenticates to IncidentDesk's API (service token? shared secret?), which wasn't part of the original scope. Documented here rather than silently left for someone to discover; the fake `500` should at minimum become a passed-through status code even before real auth is added.
+Found while trying to run the load test against the live Railway deployment instead of locally: `GET /incidents/{id}` returned a bare `500` there, because IncidentDesk requires a Bearer token IncidentRelay's proxy never sends, IncidentDesk correctly returns `401`, and `get_incident()`'s `upstream.raise_for_status()` turned that into an unhandled exception instead of a passed-through `401`. Fixed by replacing the `404`-only special case + `raise_for_status()` with a general `status_code >= 400` check that re-raises IncidentRelay's own `HTTPException` at IncidentDesk's real status code, carrying IncidentDesk's real response body as `detail` — and, importantly, only caching on success, so an error response never gets cached as if it were real incident data. Verified against the real live IncidentDesk (not just a mock): `GET /incidents/1` through the local proxy now correctly returns `401 {"detail":{"detail":"Not authenticated"}}` instead of a bare `500`.
+
+Real credentials for IncidentRelay to call IncidentDesk's API (service token? shared secret?) are still not wired up — that's a separate, bigger scope decision than "return the right status code" — so the live deployment's cache proxy still can't successfully read real incident data. It now fails honestly (`401`) instead of lying about why (`500`).
 
 ## Not yet decided / not yet built
 
-- Give IncidentRelay real credentials to call IncidentDesk's API (currently every live-deployment cache proxy request 401s upstream, surfaced as a 500 — see bug above).
+- Give IncidentRelay real credentials to call IncidentDesk's API (currently every live-deployment cache proxy request 401s upstream — now surfaced correctly as a 401, no longer masked as a 500).

@@ -48,6 +48,39 @@ def test_get_incident_404_passthrough(fake_redis, mocker):
     app.dependency_overrides.clear()
 
 
+def test_get_incident_401_passthrough(fake_redis, mocker):
+    app.dependency_overrides[get_redis] = lambda: fake_redis
+    mocker.patch(
+        "app.main.httpx.get",
+        return_value=httpx.Response(
+            401,
+            json={"detail": "Not authenticated"},
+            request=httpx.Request("GET", "https://example.com"),
+        ),
+    )
+
+    client = TestClient(app)
+    response = client.get("/incidents/5")
+    assert response.status_code == 401
+    assert response.json()["detail"] == {"detail": "Not authenticated"}
+
+    app.dependency_overrides.clear()
+
+
+def test_get_incident_does_not_cache_error_response(fake_redis, mocker):
+    app.dependency_overrides[get_redis] = lambda: fake_redis
+    mocker.patch(
+        "app.main.httpx.get",
+        return_value=httpx.Response(401, request=httpx.Request("GET", "https://example.com")),
+    )
+
+    client = TestClient(app)
+    client.get("/incidents/5")
+    assert cache.get_cached_incident(fake_redis, 5) is None
+
+    app.dependency_overrides.clear()
+
+
 def test_get_incident_upstream_unreachable_returns_502(fake_redis, mocker):
     app.dependency_overrides[get_redis] = lambda: fake_redis
     mocker.patch(
