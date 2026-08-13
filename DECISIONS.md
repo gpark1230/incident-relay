@@ -70,6 +70,12 @@ Unit tests mock `httpx.get`, which proves the code path but not that a real HTTP
 
 Swapped the placeholder `NOTIFY_WEBHOOK_URL` for a real incoming webhook (created via api.slack.com/apps → Incoming Webhooks → added to a live channel), pushed a real `incident.created` event through the full pipeline, and confirmed: `httpx` got `HTTP 200 OK` from `hooks.slack.com`, the `notification_attempts` row landed as `status = sent`, and the message was visually confirmed in the live Slack channel. No code changes were needed — `app/notifier.py` was written against Slack's real webhook contract from the start, so this was purely a config swap.
 
+## Railway: worker + listener combined into one service, not two
+
+Locally, the worker and listener are separate processes (`docker-compose.yml` still runs them as two services — that's the real, intended architecture, and it's what's documented and tested throughout this file). On Railway, provisioning hit the free plan's resource limit at 3 resources (Postgres, Redis, app), so `worker` and `listener` couldn't both get their own service.
+
+Rather than pay to preserve a topology detail that doesn't change the actual design, `scripts/run_worker_and_listener.sh` runs both processes in one container: it backgrounds `python -m app.worker` and `python -m app.listener`, then `wait -n` on either PID. If either process exits (crash or otherwise), the script exits too, which stops the container — Railway's restart policy then restarts the whole thing, bringing both processes back up together rather than leaving one silently dead while the other keeps running. This is a deployment-environment constraint, not an architecture change: the code, the queue, and the Redis list contract are unchanged: only how many OS processes happen to share one container differs between local dev and this Railway deployment.
+
 ## Not yet decided / not yet built
 
-- Railway deployment.
+(nothing currently)
