@@ -5,7 +5,7 @@ import time
 from redis import Redis
 from rq import Queue, Retry
 
-from app import rate_limiter
+from app import cache, rate_limiter
 from app.config import settings
 from app.db import SessionLocal
 from app.events import INCIDENT_EVENTS_KEY, IncidentEvent
@@ -23,6 +23,12 @@ def handle_event(event: IncidentEvent, queue: Queue, redis_client: Redis) -> Non
     if event.get("event") not in NOTIFIABLE_EVENTS:
         logger.info("Skipping unrecognized event type: %s", event.get("event"))
         return
+
+    if event["event"] == "incident.updated":
+        # Invalidate unconditionally — this must happen regardless of
+        # whether the notification itself ends up rate-limited.
+        cache.invalidate_incident(redis_client, event["incident_id"])
+        logger.info("Invalidated cache for incident %s", event["incident_id"])
 
     recipient = f"user:{event['user_id']}"
     allowed = rate_limiter.allow(redis_client, recipient, time.time())

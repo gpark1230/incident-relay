@@ -3,6 +3,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app import cache
 from app.db import Base
 from app.listener import handle_event
 from app.models import NotificationAttempt
@@ -56,3 +57,22 @@ def test_handle_event_skips_unrecognized_event_type(mocker, fake_redis):
     attempts = session.execute(select(NotificationAttempt)).scalars().all()
     assert len(attempts) == 0
     assert len(queue) == 0
+
+
+def test_handle_event_invalidates_cache_on_incident_updated(mocker, fake_redis):
+    session_factory = _make_session_factory()
+    mocker.patch("app.listener.SessionLocal", session_factory)
+    queue = Queue("notifications", connection=fake_redis)
+
+    cache.set_cached_incident(fake_redis, 5, {"id": 5, "title": "stale"})
+
+    event = {
+        "event": "incident.updated",
+        "incident_id": 5,
+        "user_id": 3,
+        "details": "status: resolved",
+        "timestamp": "2026-08-13T18:00:00+00:00",
+    }
+    handle_event(event, queue, fake_redis)
+
+    assert cache.get_cached_incident(fake_redis, 5) is None

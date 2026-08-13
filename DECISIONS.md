@@ -58,7 +58,15 @@ Added `NotificationStatus.rate_limited` (migration `a1c2d3e4f5g6`) rather than r
 
 `RATE_LIMIT_MAX_TOKENS`/`RATE_LIMIT_WINDOW_SECONDS` cap notifications *to one person* per window, regardless of which incident triggered them. This matches the stated goal directly — "a burst of incident updates doesn't spam someone" is about protecting a human's notification volume, not about rate-limiting an incident's event stream. A per-incident (or combined) key was considered and rejected: it would let a single very active incident spam one recipient with updates about *other* incidents while technically staying "under limit" per incident.
 
+## Cache invalidation happens even when the triggering notification is rate-limited
+
+`incident.updated` cache invalidation in the listener runs unconditionally, before the rate-limit check — it doesn't matter whether the *notification* for that update goes out; the cached incident data is stale the moment IncidentDesk says it changed, full stop. Coupling invalidation to notification delivery would have been a real bug: a recipient who's currently rate-limited would keep seeing stale cached incident data indefinitely.
+
+## Verified caching live against a stub IncidentDesk server, not just mocks
+
+Unit tests mock `httpx.get`, which proves the code path but not that a real HTTP round trip to another service actually caches and invalidates correctly. To verify for real (same standard applied to the queue/worker/rate-limiter milestones), a tiny stand-in HTTP server was run on the host (`http.server`, one route, an incrementing hit counter in the response body) with `INCIDENT_DESK_API_URL` pointed at it via Docker's `host.docker.internal`. Confirmed: first `GET /incidents/5` was a MISS hitting the stub (`upstream_hit_count` incremented, `X-Cache: MISS`), the second was a HIT with no upstream call (`X-Cache: HIT`, same `upstream_hit_count`), and after pushing a real `incident.updated` event through Redis, the next `GET` was a MISS again with `upstream_hit_count` incremented — proving the listener's invalidation actually took effect, not just that the code compiles.
+
 ## Not yet decided / not yet built
 
-- Cached read-through `GET /incidents/{id}` proxy + invalidation on `incident.updated` — next milestone.
+- A real (non-placeholder) Slack incoming webhook URL, to confirm a message actually lands in a channel.
 - Railway deployment.
