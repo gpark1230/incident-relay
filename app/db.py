@@ -1,3 +1,4 @@
+from redis import Redis
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -17,3 +18,7 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def get_redis():
+    return Redis.from_url(settings.redis_url)
