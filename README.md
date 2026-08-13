@@ -1,5 +1,7 @@
 # IncidentRelay
 
+**Live:** https://app-production-2270.up.railway.app ([health check](https://app-production-2270.up.railway.app/health), [notification history](https://app-production-2270.up.railway.app/notifications))
+
 An async notification, rate-limiting, and caching service for [IncidentDesk](https://github.com/gpark1230/incident-desk) — the piece IncidentDesk is missing: nobody currently gets notified when an incident is created, updated, or commented on.
 
 Rather than bolting a slow, synchronous notification call directly into IncidentDesk's request/response cycle, IncidentRelay is a separate, independently deployable service. IncidentDesk publishes a small JSON event to a shared Redis list whenever something happens; IncidentRelay picks it up, sends a Slack notification, tracks whether it succeeded, and retries with backoff if it didn't.
@@ -52,9 +54,9 @@ IncidentRelay never imports IncidentDesk's code and never touches IncidentDesk's
 
 ## Status
 
-**Built so far:** event ingestion (listener), RQ-based job processing with retry/backoff, Postgres-backed notification history, token-bucket rate limiting, cached read-through incident proxy with invalidation, health check, Docker Compose stack, Alembic migrations, CI, and a full test suite — all verified end-to-end locally against real containers, not just unit tests: a fake event pushed through the real pipeline, a burst of events proven to trip the rate limiter, a cache MISS→HIT→invalidation→MISS cycle proven against a stub IncidentDesk server, and a real Slack incoming webhook confirmed delivering an actual message to a live channel (`HTTP 200` from Slack, `notification_attempts.status = sent`).
+**Built so far:** event ingestion (listener), RQ-based job processing with retry/backoff, Postgres-backed notification history, token-bucket rate limiting, cached read-through incident proxy with invalidation, health check, Docker Compose stack, Alembic migrations, CI, and a full test suite — all verified end-to-end, not just unit tests: a real event pushed through the real pipeline (both locally and against the live Railway deployment), a burst of events proven to trip the rate limiter, a cache MISS→HIT→invalidation→MISS cycle proven against a stub IncidentDesk server, and a real Slack incoming webhook confirmed delivering an actual message to a live channel (`HTTP 200` from Slack, `notification_attempts.status = sent`) — both locally and in production.
 
-**Not yet built:** deployment to Railway.
+Deployed to Railway: Postgres + Redis addons, three services (`app`, `worker`, `listener`) building from the same Dockerfile, migration run automatically via a pre-deploy command.
 
 **Known limitation:** there's no Slack-user directory, so notifications currently address recipients as `user:{id}` in the message text rather than routing to a real per-user Slack DM (that would need Slack app OAuth scopes beyond a simple incoming webhook, which is out of scope for this project).
 
