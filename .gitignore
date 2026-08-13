@@ -11,3 +11,4 @@ htmlcov/
 *.log
 CLAUDE.md
 .claude/
+load_test_results*.csv

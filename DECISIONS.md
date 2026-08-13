@@ -86,6 +86,16 @@ The `app` service's first deploy failed in its `preDeployCommand` step with `psy
 
 The skill reference's config schema listed `DOCKERFILE` as a `build.builder` option; a GraphQL introspection query (`__type(name: "Builder") { enumValues { name } }`) shows the actual enum is `HEROKU | NIXPACKS | PAKETO | RAILPACK` — no `DOCKERFILE` value exists. Setting it silently had no effect (same JSON-patch call that worked for other fields left `builder: RAILPACK` unchanged). Turned out not to matter: Railway's Railpack builder auto-detects a `Dockerfile` at the repo root and builds with `buildkit` regardless of the `builder` label, confirmed by reading actual build logs showing Docker layer builds (`[4/5] RUN pip install...`, `[5/5] COPY . .`) rather than a Railpack-assembled build plan.
 
+## Measured the cache hit rate instead of guessing a number
+
+Needed an honest number for how much the read-through cache actually cuts repeat reads against IncidentDesk — not a plausible-sounding guess. `scripts/load_test_cache.py` simulates a realistic access pattern: 5 "active" incidents looked up repeatedly at random (like several on-call engineers checking the same incidents, or a dashboard polling), one request every 0.5s for 90 seconds (three full 30s TTL cycles). It reads the real `X-Cache` response header IncidentRelay already sets — no separate instrumentation needed — and cross-checks the reported miss count against the test upstream's own per-incident request counter, so the number isn't just self-reported by the thing being measured.
+
+Result: **175 requests, 160 hits, 15 misses — 91.4% cache hit rate**, with the upstream cross-check matching exactly (15 misses reported = 15 requests the upstream actually received). Run locally against the same stub-IncidentDesk setup used to verify invalidation, since the live Railway deployment can't be used for this yet — see the bug below.
+
+## Bug: the cache proxy 500s instead of passing through IncidentDesk's real status code
+
+Found while trying to run the load test against the live Railway deployment instead of locally: `GET /incidents/{id}` returns a bare `500` there, because IncidentDesk requires a Bearer token IncidentRelay's proxy never sends, IncidentDesk correctly returns `401`, and `get_incident()`'s `upstream.raise_for_status()` turns that into an unhandled exception instead of a passed-through `401`. Not fixed yet — fixing it for real means deciding how IncidentRelay authenticates to IncidentDesk's API (service token? shared secret?), which wasn't part of the original scope. Documented here rather than silently left for someone to discover; the fake `500` should at minimum become a passed-through status code even before real auth is added.
+
 ## Not yet decided / not yet built
 
-(nothing currently)
+- Give IncidentRelay real credentials to call IncidentDesk's API (currently every live-deployment cache proxy request 401s upstream, surfaced as a 500 — see bug above).
