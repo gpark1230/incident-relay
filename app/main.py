@@ -1,5 +1,9 @@
+from pathlib import Path
+
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from redis import Redis
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -10,7 +14,15 @@ from app.db import get_db, get_redis
 from app.models import NotificationAttempt, NotificationStatus
 from app.schemas import NotificationAttemptOut
 
+STATIC_DIR = Path(__file__).parent / "static"
+
 app = FastAPI(title="IncidentRelay")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+@app.get("/", include_in_schema=False)
+def dashboard():
+    return FileResponse(STATIC_DIR / "index.html")
 
 
 @app.get("/health")

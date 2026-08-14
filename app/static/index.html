@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IncidentRelay</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<nav id="navbar">
+  <div class="brand">Incident<span>Relay</span></div>
+  <div class="links">
+    <a href="https://github.com/gpark1230/incident-relay" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://api-production-1570.up.railway.app" target="_blank" rel="noopener">IncidentDesk</a>
+    <a href="/docs" class="btn-secondary" target="_blank" rel="noopener">API docs</a>
+  </div>
+</nav>
+
+<div class="page">
+
+  <div class="card">
+    <h2>Service health</h2>
+    <p class="subtitle">Async notification, rate-limiting &amp; caching service for IncidentDesk</p>
+    <div class="health-grid" id="health-grid">
+      <div class="health-tile"><div class="label">Overall</div><div class="value" id="health-overall">—</div></div>
+      <div class="health-tile"><div class="label">Database</div><div class="value" id="health-db">—</div></div>
+      <div class="health-tile"><div class="label">Redis</div><div class="value" id="health-redis">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Notification history</h2>
+    <p class="subtitle">Every notification IncidentRelay has attempted to deliver</p>
+
+    <div class="toolbar">
+      <div class="filter-group">
+        <label for="filter-status">Status</label>
+        <select id="filter-status">
+          <option value="">All</option>
+          <option value="sent">Sent</option>
+          <option value="failed">Failed</option>
+          <option value="pending">Pending</option>
+          <option value="rate_limited">Rate limited</option>
+        </select>
+      </div>
+      <div class="spacer"></div>
+      <div class="refresh-note" id="refresh-note"></div>
+    </div>
+
+    <div id="notifications-list" class="notification-grid"></div>
+  </div>
+
+  <p class="footer-note">
+    Built as a separate, independently deployable service — see
+    <a href="https://github.com/gpark1230/incident-relay/blob/main/DECISIONS.md" target="_blank" rel="noopener">DECISIONS.md</a>
+    for the real engineering tradeoffs behind it.
+  </p>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -106,6 +106,10 @@ IncidentDesk only has one auth mechanism — email/password login at `POST /auth
 
 Verified against the real live IncidentDesk, not a mock: `GET /incidents/1` through the local proxy now returns real incident data (`"Ransomware alert from CrowdStrike on FIN-WKS-014"`) on a cache MISS, and serves it from cache with zero upstream calls on the next request — the full read-through cache, working end-to-end against production IncidentDesk for the first time.
 
+## A minimal read-only dashboard, styled to match IncidentDesk, served by the API itself
+
+The bare Railway domain (`app-production-2270.up.railway.app`) had no route at `/` and 404'd — an easy first click for anyone following a resume link, and a dead-end. Rather than bolt on a separate frontend project (a new build step, a new deploy target, real added complexity for a demo view), `app/static/{index.html,style.css,app.js}` is a single static page FastAPI already serves via `StaticFiles` + a `GET /` route, using the exact same CSS custom properties, card/badge patterns, and navbar layout as IncidentDesk's own frontend (`app/static/style.css` there) — same visual language across both portfolio pieces, zero new dependencies, zero build step. It's read-only (health tiles + a live-polled, filterable notification list) since IncidentRelay has no user accounts to gate it behind, unlike IncidentDesk's login-gated dashboard.
+
 ## Not yet decided / not yet built
 
 (nothing currently)

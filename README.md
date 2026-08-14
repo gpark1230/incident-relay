@@ -1,10 +1,12 @@
 # IncidentRelay
 
-**Live:** https://app-production-2270.up.railway.app ([health check](https://app-production-2270.up.railway.app/health), [notification history](https://app-production-2270.up.railway.app/notifications))
+**Live:** https://app-production-2270.up.railway.app ([API docs](https://app-production-2270.up.railway.app/docs))
 
 An async notification, rate-limiting, and caching service for [IncidentDesk](https://github.com/gpark1230/incident-desk) — the piece IncidentDesk is missing: nobody currently gets notified when an incident is created, updated, or commented on.
 
 Rather than bolting a slow, synchronous notification call directly into IncidentDesk's request/response cycle, IncidentRelay is a separate, independently deployable service. IncidentDesk publishes a small JSON event to a shared Redis list whenever something happens; IncidentRelay picks it up, sends a Slack notification, tracks whether it succeeded, and retries with backoff if it didn't.
+
+![IncidentRelay's dashboard, showing live service health and notification history](./docs/dashboard.png)
 
 ![A real incident.created event delivered by IncidentRelay to a live Slack channel](./docs/slack-notification.png)
 
